@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-darwin/apfs"
 	"io"
 	"io/ioutil"
 	"math"
@@ -91,9 +92,10 @@ var ParseUserQuery = func(query string) (titleQuery string, domainQuery string, 
 			// 	artistQuery = word[1 : len(word)-1]
 			// }
 
-			if strings.HasPrefix(word, "#") && len(word) > 1 {
-				isDomainSearch = true
-				domainQuery = word[1 : len(word)-1]
+			// fix bug
+			if strings.HasPrefix(word, "#") {
+				domainQuery = word[1:]
+				isDomainSearch = len(domainQuery) > 0
 			} else {
 				// TODO: Refactor below logic using `strings.Join`
 				if titleQuery == "" {
@@ -110,7 +112,74 @@ var ParseUserQuery = func(query string) (titleQuery string, domainQuery string, 
 	return
 }
 
+// 2022/9/6, blaketang
+// 分隔空格字符串，生成多个and like语句
+func combineLikeCondition(field string, query string) (res string) {
+	var words = strings.Split(query, " ")
+	if len(words) < 2 {
+		res = fmt.Sprintf(`%s LIKE '%%%s%%'`, field, query)
+		return
+	}
+	for _, word := range words {
+		if len(res) > 0 {
+			res += " and "
+		}
+		res += fmt.Sprintf(`%s LIKE '%%%s%%'`, field, word)
+	}
+	return
+}
+
 func CopyFile(src, dst string) {
+	// ------------------ start patch: check copy necessary --------
+	// 很多sqlite3 db 操作，都先复制，是为了避免(database is locked)的错误
+	// 故这里做了优化，时间低于 120秒，重复使用，且使用clonefile进行clone
+	fileInfo, err := os.Stat(dst)
+	if err == nil {
+		srcFileInfo, srcErr := os.Stat(src)
+		if srcErr == nil {
+
+			// Get the file modification time
+			modTime := fileInfo.ModTime()
+			srcModTime := srcFileInfo.ModTime()
+
+			if modTime == srcModTime && fileInfo.Size() == srcFileInfo.Size() {
+				fmt.Fprintf(os.Stderr, "文件:%s 日期&大小相等:%s\n", dst, modTime)
+				return
+			}
+
+			// Get the current time
+			now := time.Now()
+
+			// Calculate the difference between the current time and the modification time
+			diff := now.Sub(modTime)
+
+			// Convert the difference to seconds
+			seconds := diff.Seconds()
+
+			if seconds < 120 {
+				fmt.Fprintf(os.Stderr, "文件:%s 离上次修改时间小于 120秒，跳过复制\n", dst)
+				return
+			}
+		}
+		// remove file for clonefile
+		err := os.Remove(dst)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "删除旧文件失败", dst, err)
+		} else {
+			fmt.Fprintln(os.Stderr, "删除旧文件成功", dst)
+		}
+	}
+
+	// try to clonefile
+	err = apfs.CloneFileAt(src, dst, apfs.CLONEFILE_FLAG(0))
+	if err == nil {
+		fmt.Fprintln(os.Stderr, `clonefile succ`, dst)
+		// clone succ
+		return
+	} else {
+		fmt.Fprintln(os.Stderr, `通过 apfs.clonefile 失败，走正常模式. err:`, err)
+	}
+	// ------------------------- end patch ----------------------
 	in, err := os.Open(src)
 	if err != nil {
 		panic(err)

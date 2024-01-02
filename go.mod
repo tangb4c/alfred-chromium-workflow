@@ -3,12 +3,14 @@ module github.com/jopemachine/alfred-chromium-workflow
 go 1.18
 
 require (
-	github.com/deanishe/awgo v0.29.1 // indirect
+	github.com/deanishe/awgo v0.29.1
+	github.com/go-darwin/apfs v0.0.0-20211011131704-f84b94dbf348
+	github.com/klauspost/lctime v0.1.0
+	github.com/mattn/go-sqlite3 v1.14.13
+	github.com/mozillazg/go-pinyin v0.20.0
+	github.com/weppos/publicsuffix-go v0.15.0
 	github.com/jpillora/go-tld v1.1.1 // indirect
-	github.com/klauspost/lctime v0.1.0 // indirect
-	github.com/magefile/mage v1.14.0 // indirect
-	github.com/mattn/go-sqlite3 v1.14.13 // indirect
-	github.com/weppos/publicsuffix-go v0.15.0 // indirect
+	github.com/magefile/mage v1.13.0 // indirect
 	go.deanishe.net/env v0.5.1 // indirect
 	go.deanishe.net/fuzzy v1.0.0 // indirect
 	golang.org/x/exp v0.0.0-20220518171630-0b5c67f07fdf // indirect

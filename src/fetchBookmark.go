@@ -3,13 +3,17 @@ package src
 import (
 	"fmt"
 	"github.com/deanishe/awgo"
+	"github.com/mozillazg/go-pinyin"
 	"sort"
+	"strings"
+	"unicode"
 )
 
 var FetchBookmark = func(wf *aw.Workflow, query string) {
 	InitBookmarkJsonTraversal()
 	bookmarkRoot := GetChromeBookmark()
 	input, flags := ParseQueryFlags(query)
+	input, domainQuery, isDomainSearch := ParseUserQuery(input)
 	var bookmarks []BookmarkItem
 
 	if folderId, ok := flags["folderId"]; ok {
@@ -25,6 +29,19 @@ var FetchBookmark = func(wf *aw.Workflow, query string) {
 		}
 	} else {
 		bookmarks = TraverseBookmarkJSONObject(bookmarkRoot, TraverseBookmarkJsonOption{Targets: []string{"url"}, Depth: 99})
+	}
+
+	//2023-12-30 域名搜索(其实是url)
+	if isDomainSearch {
+		var new_bookmarks []BookmarkItem
+		// 全部转换成小写
+		domainQuery = strings.ToLower(domainQuery)
+		for i := 0; i < len(bookmarks); i++ {
+			if strings.Contains(strings.ToLower(bookmarks[i].Url), domainQuery) {
+				new_bookmarks = append(new_bookmarks, bookmarks[i])
+			}
+		}
+		bookmarks = new_bookmarks
 	}
 
 	historyDB := GetHistoryDB(wf)
@@ -72,7 +89,8 @@ var FetchBookmark = func(wf *aw.Workflow, query string) {
 			Arg(bookmark.Url).
 			Copytext(bookmark.Url).
 			Autocomplete(bookmark.Name).
-			Largetype(bookmark.Name)
+			Largetype(bookmark.Name).
+			Match(toPinYin(bookmark.Name))
 
 		item.Cmd().Subtitle("Press Enter to copy this url to clipboard")
 
@@ -81,7 +99,49 @@ var FetchBookmark = func(wf *aw.Workflow, query string) {
 		}
 	}
 
-	if input != "" {
-		wf.Filter(input)
+	// 修正搜索不支持空格分隔的问题，同时也支持顺序调换
+	for _, word := range strings.Split(input, " ") {
+		wf.Filter(word)
 	}
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+func toPinYin(s string) string {
+	pinYinArgs := pinyin.NewArgs()
+	// 是否多音字
+	// 必须开启，否则后续通过 slice[0] == "" 的判断会失效，因为
+	// 非多单字的情况下，每个字符的数组，只会返回1个元素
+	pinYinArgs.Heteronym = true
+	pinYinArgs.Fallback = func(r rune, a pinyin.Args) []string {
+		// "" 作为一个标记
+		return []string{"", string(r)}
+	}
+	pinyin_str := ""
+	for _, slice := range pinyin.Pinyin(s, pinYinArgs) {
+		if slice[0] == "" {
+			pinyin_str += slice[1]
+			continue
+		}
+		// 只取第 1 个拼音，其它直接不要
+		pinyin_str += strings.ToUpper(slice[0][0:1]) + slice[0][1:]
+
+		//line := ""
+		//for _, str := range slice {
+		//	// 防止重复
+		//	if strings.Contains(line, str) {
+		//		continue
+		//	}
+		//	line += str
+		//	pinyin_str += strings.ToUpper(str[0:1]) + str[1:]
+		//}
+	}
+	return s + pinyin_str
 }

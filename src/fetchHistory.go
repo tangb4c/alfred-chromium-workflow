@@ -3,17 +3,35 @@ package src
 import (
 	"fmt"
 	"github.com/deanishe/awgo"
+	"os"
 	"strings"
 )
 
 var FetchHistory = func(wf *aw.Workflow, query string) {
 	titleQuery, domainQuery, isDomainSearch := ParseUserQuery(query)
 
-	var dbQuery = fmt.Sprintf(`
+	// 2022/9/7, blaketang, 添加url模糊搜索
+	// 2022/9/7, blaketang, 禁止掉域名搜索，域名判断太绝对了
+	// 2023-12-30, 恢复域名搜索
+	// isDomainSearch = false
+	var dbQuery = ""
+	if len(domainQuery) > 0 {
+		dbQuery = fmt.Sprintf(`
 		SELECT urls.id, urls.title, urls.url, urls.last_visit_time FROM urls
-		WHERE urls.title LIKE '%%%s%%'
+		WHERE urls.url LIKE '%%%s%%' and 
+		%s
 		ORDER BY last_visit_time DESC
-	`, titleQuery)
+	`, domainQuery,
+			combineLikeCondition("urls.title", titleQuery))
+	} else {
+		dbQuery = fmt.Sprintf(`
+		SELECT urls.id, urls.title, urls.url, urls.last_visit_time FROM urls
+		WHERE %s
+		ORDER BY last_visit_time DESC
+	`, combineLikeCondition("urls.title", titleQuery))
+	}
+
+	fmt.Fprintln(os.Stderr, `查询SQL: `, dbQuery)
 
 	historyDB := GetHistoryDB(wf)
 
